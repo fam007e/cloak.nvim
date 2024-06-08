@@ -38,11 +38,13 @@ M.setup = function(opts)
     end
 
     vim.api.nvim_create_autocmd(
-      { 'BufRead', 'TextChanged', 'TextChangedI', 'TextChangedP' }, {
+      { 'BufEnter', 'TextChanged', 'TextChangedI', 'TextChangedP' }, {
         pattern = pattern.file_pattern,
         callback = function()
           if M.opts.enabled then
             M.cloak(pattern)
+          else
+            M.uncloak()
           end
         end,
         group = group,
@@ -138,22 +140,27 @@ M.uncloak_line = function()
   M.opts.uncloaked_line_num = cursor[1]
 
   vim.api.nvim_create_autocmd(
-    { 'CursorMoved', 'CursorMovedI' }, {
+    { 'CursorMoved', 'CursorMovedI', 'BufLeave' }, {
       buffer = buf,
-      callback = function()
-        local nbuf = vim.api.nvim_win_get_buf(0)
-        local ncursor = vim.api.nvim_win_get_cursor(0)
-
-        if buf ~= nbuf then
-          return
+      callback = function(args)
+        if not M.opts.enabled then
+          M.opts.uncloaked_line_num = nil
+          return true
         end
 
+        if args.event == 'BufLeave' then
+          M.opts.uncloaked_line_num = nil
+          M.recloak_file(vim.api.nvim_buf_get_name(buf))
+          return true
+        end
+
+        local ncursor = vim.api.nvim_win_get_cursor(0)
         if ncursor[1] == M.opts.uncloaked_line_num then
           return
         end
 
         M.opts.uncloaked_line_num = nil
-        M.recloak_file(vim.api.nvim_buf_get_name(nbuf))
+        M.recloak_file(vim.api.nvim_buf_get_name(buf))
 
         -- deletes the auto command
         return true
