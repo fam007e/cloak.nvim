@@ -33,6 +33,8 @@ require('cloak').setup({
   try_all_patterns = true,
   -- Set to true to cloak Telescope preview buffers. (Required feature not in 0.1.x)
   cloak_telescope = true,
+  -- Re-enable cloak when a matched buffer leaves the window.
+  cloak_on_leave = false,
   patterns = {
     {
       -- Match any file starting with '.env'.

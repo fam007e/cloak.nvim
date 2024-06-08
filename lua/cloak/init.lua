@@ -18,6 +18,7 @@ M.opts = {
   patterns = { { file_pattern = '.env*', cloak_pattern = '=.+' } },
   cloak_telescope = true,
   uncloaked_line_num = nil,
+  cloak_on_leave = false,
 }
 
 M.setup = function(opts)
@@ -35,6 +36,7 @@ M.setup = function(opts)
             or inner_pattern
       end
     end
+
     vim.api.nvim_create_autocmd(
       { 'BufRead', 'TextChanged', 'TextChangedI', 'TextChangedP' }, {
         pattern = pattern.file_pattern,
@@ -46,10 +48,21 @@ M.setup = function(opts)
         group = group,
       }
     )
+
+    if M.opts.cloak_on_leave then
+      vim.api.nvim_create_autocmd(
+        'BufWinLeave', {
+          pattern = pattern.file_pattern,
+          callback = function()
+            M.enable()
+          end,
+          group = group,
+        }
+      )
+    end
   end
 
   if M.opts.cloak_telescope then
-
     vim.api.nvim_create_autocmd(
       'User', {
         pattern = 'TelescopePreviewerLoaded',
