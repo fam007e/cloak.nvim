@@ -218,18 +218,12 @@ M.cloak = function(pattern)
   end
 
   local function place_extmark(row_0idx, col_0idx, end_col_0idx_excl, length, prefix)
-    local virt_text_pos = vim.fn.has('nvim-0.10') == 1 and 'inline' or 'overlay'
-    local replacement = virt_text_pos == 'inline'
-      and (prefix .. M.opts.cloak_character:rep(tonumber(M.opts.cloak_length) or length))
-      or determine_replacement(length, prefix)
+    local replacement = determine_replacement(length, prefix)
     local extmark_opts = {
       hl_mode = 'combine',
       virt_text = { { replacement, M.opts.highlight_group } },
-      virt_text_pos = virt_text_pos,
+      virt_text_pos = 'overlay',
     }
-    if virt_text_pos == 'inline' then
-      extmark_opts.end_col = end_col_0idx_excl
-    end
     pcall(vim.api.nvim_buf_set_extmark, 0, namespace, row_0idx, col_0idx, extmark_opts)
   end
 
@@ -331,9 +325,7 @@ M.cloak = function(pattern)
   end
 
   if found_pattern then
-    if vim.fn.has('nvim-0.10') == 0 then
-      vim.opt_local.wrap = false
-    end
+    vim.opt_local.wrap = false
   end
 end
 
