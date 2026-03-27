@@ -221,15 +221,14 @@ M.cloak = function(pattern)
   local function place_extmark(row_0idx, col_0idx, end_col_0idx_excl, length, prefix)
     if M.opts.cloak_wrap and vim.fn.has('nvim-0.10') == 1 then
       vim.opt_local.conceallevel = 2
-      -- In wrapped mode, we conceal the entire range from the original match start.
-      -- We include the prefix in the virtual text to keep it visible while hiding the secret.
-      local replacement = prefix .. M.opts.cloak_character:rep(tonumber(M.opts.cloak_length) or (length - vim.fn.strchars(prefix)))
+      -- Use the character-based concealer for bullet-proof masking on wrapped lines.
       pcall(vim.api.nvim_buf_set_extmark, 0, namespace, row_0idx, col_0idx, {
         hl_mode = 'combine',
-        virt_text = { { replacement, M.opts.highlight_group } },
+        virt_text = { { prefix, M.opts.highlight_group } },
         virt_text_pos = 'inline',
-        conceal = '', 
+        conceal = M.opts.cloak_character, 
         end_col = end_col_0idx_excl,
+        hl_group = M.opts.highlight_group,
       })
     else
       local replacement = determine_replacement(length, prefix)
