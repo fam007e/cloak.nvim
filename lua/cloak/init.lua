@@ -221,7 +221,11 @@ M.cloak = function(pattern)
   local function place_extmark(row_0idx, col_0idx, end_col_0idx_excl, length, prefix)
     if M.opts.cloak_wrap and vim.fn.has('nvim-0.10') == 1 then
       vim.opt_local.conceallevel = 2
-      vim.opt_local.concealcursor = 'nivc' -- keep conceal active on cursor line in all modes
+      -- FIX: concealcursor defaults to '' which causes Neovim to reveal the
+      -- concealed text whenever the cursor is on that line (in any mode).
+      -- 'nivc' keeps the conceal active in normal, insert, visual, and command
+      -- modes so secrets stay hidden regardless of cursor position.
+      vim.opt_local.concealcursor = 'nivc'
       -- Use conceal = '' to hide the range, and provide stars in virt_text.
       -- This ensures wrapping works while the secret stays hidden.
       local star_count = tonumber(M.opts.cloak_length) or length
