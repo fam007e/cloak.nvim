@@ -355,6 +355,7 @@ M.disable = function()
   M.uncloak()
   M.opts.enabled = false
   vim.b.cloak_enabled = false
+  M.opts.uncloaked_line_num = nil
 end
 
 M.enable = function()
