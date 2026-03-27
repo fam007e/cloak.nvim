@@ -282,23 +282,21 @@ M.cloak = function(pattern)
       if has_groups and matching_pattern.replace ~= nil then
         prefix = match_str:gsub(matching_pattern[1], matching_pattern.replace, 1)
       end
-      local prefix_len = #prefix
-      if prefix == full_text:sub(first, first + prefix_len - 1) then
-        first = first + prefix_len
-        prefix = ''
-      end
 
-      if first <= last then
-        local sr, sc = byte_to_pos(first)
-        local er, ec = byte_to_pos(last)
+      local prefix_byte_len = #prefix
+      local secret_start = first + prefix_byte_len
+      local secret_end = last
+
+      if secret_start <= secret_end then
+        local sr, sc = byte_to_pos(secret_start)
+        local er, ec = byte_to_pos(secret_end)
         for i = sr, er do
           if i ~= M.opts.uncloaked_line_num then
             local l_start = (i == sr) and sc or 1
             local l_end   = (i == er) and ec or #lines[i]
             if l_end >= l_start then
-              local len = l_end - l_start + 1
-              place_extmark(i - 1, l_start - 1, l_end, len, prefix)
-              prefix = ''
+              local len = vim.fn.strchars(lines[i]:sub(l_start, l_end))
+              place_extmark(i - 1, l_start - 1, l_end, len, "")
             end
           end
         end
@@ -326,18 +324,21 @@ M.cloak = function(pattern)
 
         local match_str = line:sub(first, last)
         local prefix = match_str:sub(1, 1)
+
+        -- If the pattern has groups and a replacement, use the first group as the prefix.
         if has_groups and matching_pattern.replace ~= nil then
           prefix = match_str:gsub(matching_pattern[1], matching_pattern.replace, 1)
         end
 
-        local prefix_len = #prefix
-        if prefix == line:sub(first, first + prefix_len - 1) then
-          first = first + prefix_len
-          prefix = ''
-        end
+        -- Determine how many characters are in the prefix to find where the secret starts.
+        -- We use byte length here for absolute concealment accuracy.
+        local prefix_byte_len = #prefix
+        local secret_start = first + prefix_byte_len
+        local secret_end = last
 
-        if first <= last then
-          place_extmark(i - 1, first - 1, last, last - first + 1, prefix)
+        if secret_start <= secret_end then
+          local secret_len = vim.fn.strchars(line:sub(secret_start, secret_end))
+          place_extmark(i - 1, secret_start - 1, secret_end, secret_len, "")
         end
         si = last + 1
       end
