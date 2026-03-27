@@ -217,95 +217,116 @@ M.cloak = function(pattern)
       .. (' '):rep(math.max(0, remaining_length))
   end
 
+  local function place_extmark(row_0idx, col_0idx, end_col_0idx_excl, length, prefix)
+    local virt_text_pos = vim.fn.has('nvim-0.10') == 1 and 'inline' or 'overlay'
+    local replacement = virt_text_pos == 'inline'
+      and (prefix .. M.opts.cloak_character:rep(tonumber(M.opts.cloak_length) or length))
+      or determine_replacement(length, prefix)
+    local extmark_opts = {
+      hl_mode = 'combine',
+      virt_text = { { replacement, M.opts.highlight_group } },
+      virt_text_pos = virt_text_pos,
+    }
+    if virt_text_pos == 'inline' then
+      extmark_opts.end_col = end_col_0idx_excl
+    end
+    pcall(vim.api.nvim_buf_set_extmark, 0, namespace, row_0idx, col_0idx, extmark_opts)
+  end
+
   local found_pattern = false
   local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
   if #lines == 0 then return end
-  
-  local full_text = table.concat(lines, '\n')
-  local line_starts = { 1 }
-  local current_offset = 1
-  for i = 1, #lines - 1 do
-    current_offset = current_offset + #lines[i] + 1 -- +1 for '\n'
-    table.insert(line_starts, current_offset)
-  end
 
-  local function byte_to_pos(offset)
-    for i = #line_starts, 1, -1 do
-      if offset >= line_starts[i] then
-        return i, offset - line_starts[i] + 1
-      end
+  if pattern.multiline then
+    -- Full-buffer engine for explicit multi-line patterns (e.g. PEM keys).
+    -- Patterns must use [^\n] instead of . if you don't want cross-line matching.
+    local full_text = table.concat(lines, '\n')
+    local line_starts = { 1 }
+    local cur = 1
+    for i = 1, #lines - 1 do
+      cur = cur + #lines[i] + 1
+      table.insert(line_starts, cur)
     end
-    return 1, 1
-  end
-
-  -- Find all matches for the current buffer text
-  local searchStartIndex = 1
-  while searchStartIndex <= #full_text do
-    local first, last, matching_pattern, has_groups = -1, 1, nil, false
-    for _, inner_pattern in ipairs(pattern.cloak_pattern) do
-      local current_first, current_last, capture_group =
-        full_text:find(inner_pattern[1], searchStartIndex)
-      if current_first ~= nil
-        and (first < 0
-          or current_first < first
-          or (current_first == first and current_last > last)) then
-        first, last, matching_pattern, has_groups =
-          current_first, current_last, inner_pattern, capture_group ~= nil
-        if M.opts.try_all_patterns == false then break end
+    local function byte_to_pos(offset)
+      for i = #line_starts, 1, -1 do
+        if offset >= line_starts[i] then
+          return i, offset - line_starts[i] + 1
+        end
       end
+      return 1, 1
     end
 
-    if first >= 0 then
+    local si = 1
+    while si <= #full_text do
+      local first, last, matching_pattern, has_groups = -1, 1, nil, false
+      for _, ip in ipairs(pattern.cloak_pattern) do
+        local cf, cl, cg = full_text:find(ip[1], si)
+        if cf ~= nil and (first < 0 or cf < first or (cf == first and cl > last)) then
+          first, last, matching_pattern, has_groups = cf, cl, ip, cg ~= nil
+          if M.opts.try_all_patterns == false then break end
+        end
+      end
+      if first < 0 then break end
       found_pattern = true
-      
+
       local match_str = full_text:sub(first, last)
       local prefix = match_str:sub(1, 1)
       if has_groups and matching_pattern.replace ~= nil then
         prefix = match_str:gsub(matching_pattern[1], matching_pattern.replace, 1)
       end
-      
       local prefix_len = #prefix
       if prefix == full_text:sub(first, first + prefix_len - 1) then
         first = first + prefix_len
         prefix = ''
       end
-      
-      if first <= last then
-        local start_row, start_col = byte_to_pos(first)
-        local end_row, end_col = byte_to_pos(last)
-        local virt_text_pos = vim.fn.has('nvim-0.10') == 1 and 'inline' or 'overlay'
 
-        for i = start_row, end_row do
+      if first <= last then
+        local sr, sc = byte_to_pos(first)
+        local er, ec = byte_to_pos(last)
+        for i = sr, er do
           if i ~= M.opts.uncloaked_line_num then
-            local l_start = (i == start_row) and start_col or 1
-            local l_end = (i == end_row) and end_col or (#lines[i])
+            local l_start = (i == sr) and sc or 1
+            local l_end   = (i == er) and ec or #lines[i]
             if l_end >= l_start then
-              local line_match_len = l_end - l_start + 1
-              local replacement = virt_text_pos == 'inline'
-                and (prefix .. M.opts.cloak_character:rep(tonumber(M.opts.cloak_length) or line_match_len))
-                or determine_replacement(line_match_len, prefix)
-              
-              prefix = '' -- Only apply prefix to the first line's payload
-              
-              local extmark_opts = {
-                hl_mode = 'combine',
-                virt_text = { { replacement, M.opts.highlight_group } },
-                virt_text_pos = virt_text_pos,
-              }
-              if virt_text_pos == 'inline' then
-                extmark_opts.end_col = l_end
-              end
-              
-              pcall(vim.api.nvim_buf_set_extmark,
-                0, namespace, i - 1, l_start - 1, extmark_opts
-              )
+              local len = l_end - l_start + 1
+              place_extmark(i - 1, l_start - 1, l_end, len, prefix)
+              prefix = ''
             end
           end
         end
       end
-      searchStartIndex = last + 1
-    else
-      break
+      si = last + 1
+    end
+
+  else
+    -- Original line-by-line engine (Lua's `.` would match \n in full-text mode,
+    -- so we keep per-line matching to preserve correct single-line behaviour).
+    for i, line in ipairs(lines) do
+      local si = 1
+      while si < #line and i ~= M.opts.uncloaked_line_num do
+        local first, last, matching_pattern, has_groups = -1, 1, nil, false
+        for _, ip in ipairs(pattern.cloak_pattern) do
+          local cf, cl, cg = line:find(ip[1], si)
+          if cf ~= nil and (first < 0 or cf < first or (cf == first and cl > last)) then
+            first, last, matching_pattern, has_groups = cf, cl, ip, cg ~= nil
+            if M.opts.try_all_patterns == false then break end
+          end
+        end
+        if first < 0 then break end
+        found_pattern = true
+
+        local prefix = line:sub(first, first)
+        if has_groups and matching_pattern.replace ~= nil then
+          prefix = line:sub(first, last):gsub(matching_pattern[1], matching_pattern.replace, 1)
+        end
+        local last_of_prefix = first + vim.fn.strchars(prefix) - 1
+        if prefix == line:sub(first, last_of_prefix) then
+          first, prefix = last_of_prefix + 1, ''
+        end
+
+        place_extmark(i - 1, first - 1, last, last - first + 1, prefix)
+        si = last
+      end
     end
   end
 
@@ -315,6 +336,7 @@ M.cloak = function(pattern)
     end
   end
 end
+
 
 M.recloak_file = function(filename)
   local base_name = vim.fn.fnamemodify(filename, ':t')
