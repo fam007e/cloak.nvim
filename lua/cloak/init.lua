@@ -221,12 +221,14 @@ M.cloak = function(pattern)
   local function place_extmark(row_0idx, col_0idx, end_col_0idx_excl, length, prefix)
     if M.opts.cloak_wrap and vim.fn.has('nvim-0.10') == 1 then
       vim.opt_local.conceallevel = 2
-      local replacement = prefix .. M.opts.cloak_character:rep(tonumber(M.opts.cloak_length) or length)
+      -- In wrapped mode, we conceal the entire range from the original match start.
+      -- We include the prefix in the virtual text to keep it visible while hiding the secret.
+      local replacement = prefix .. M.opts.cloak_character:rep(tonumber(M.opts.cloak_length) or (length - vim.fn.strchars(prefix)))
       pcall(vim.api.nvim_buf_set_extmark, 0, namespace, row_0idx, col_0idx, {
         hl_mode = 'combine',
         virt_text = { { replacement, M.opts.highlight_group } },
         virt_text_pos = 'inline',
-        conceal = '', -- Hides the actual text underneath
+        conceal = '', 
         end_col = end_col_0idx_excl,
       })
     else
@@ -309,7 +311,7 @@ M.cloak = function(pattern)
     -- so we keep per-line matching to preserve correct single-line behaviour).
     for i, line in ipairs(lines) do
       local si = 1
-      while si < #line and i ~= M.opts.uncloaked_line_num do
+      while si <= #line and i ~= M.opts.uncloaked_line_num do
         local first, last, matching_pattern, has_groups = -1, 1, nil, false
         for _, ip in ipairs(pattern.cloak_pattern) do
           local cf, cl, cg = line:find(ip[1], si)
@@ -318,20 +320,26 @@ M.cloak = function(pattern)
             if M.opts.try_all_patterns == false then break end
           end
         end
+
         if first < 0 then break end
         found_pattern = true
 
-        local prefix = line:sub(first, first)
+        local match_str = line:sub(first, last)
+        local prefix = match_str:sub(1, 1)
         if has_groups and matching_pattern.replace ~= nil then
-          prefix = line:sub(first, last):gsub(matching_pattern[1], matching_pattern.replace, 1)
-        end
-        local last_of_prefix = first + vim.fn.strchars(prefix) - 1
-        if prefix == line:sub(first, last_of_prefix) then
-          first, prefix = last_of_prefix + 1, ''
+          prefix = match_str:gsub(matching_pattern[1], matching_pattern.replace, 1)
         end
 
-        place_extmark(i - 1, first - 1, last, last - first + 1, prefix)
-        si = last
+        local prefix_len = #prefix
+        if prefix == line:sub(first, first + prefix_len - 1) then
+          first = first + prefix_len
+          prefix = ''
+        end
+
+        if first <= last then
+          place_extmark(i - 1, first - 1, last, last - first + 1, prefix)
+        end
+        si = last + 1
       end
     end
   end
